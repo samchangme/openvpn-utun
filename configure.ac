@@ -423,6 +423,9 @@ AC_CHECK_HEADERS([ \
 	linux/types.h sys/poll.h sys/epoll.h err.h \
 ])
 
+# Darwin
+AC_CHECK_HEADERS([sys/kern_control.h sys/sys_domain.h])
+
 SOCKET_INCLUDES="
 #ifdef HAVE_STDLIB_H
 #include <stdlib.h>
@@ -454,7 +457,7 @@ SOCKET_INCLUDES="
 "
 
 AC_CHECK_HEADERS(
-	[net/if.h netinet/ip.h netinet/if_ether.h resolv.h sys/un.h],
+	[net/if.h net/if_utun.h netinet/ip.h netinet/if_ether.h resolv.h sys/un.h],
 	,
 	,
 	[[${SOCKET_INCLUDES}]]

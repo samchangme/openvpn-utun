@@ -349,6 +349,26 @@
 
 #endif /* TARGET_DRAGONFLY */
 
+#ifdef TARGET_DARWIN
+
+#ifdef HAVE_SYS_KERN_CONTROL_H
+#include <sys/kern_control.h>
+#endif
+
+#ifdef HAVE_SYS_SYS_DOMAIN_H
+#include <sys/sys_domain.h>
+#endif
+
+#ifdef HAVE_NET_IF_UTUN_H
+#include <net/if_utun.h>
+#endif
+
+#ifdef HAVE_NETINET_IP_H
+#include <netinet/ip.h>
+#endif
+
+#endif
+
 #ifdef WIN32
 #include <iphlpapi.h>
 #include <ntddndis.h>

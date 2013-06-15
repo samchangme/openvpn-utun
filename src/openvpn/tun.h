@@ -111,6 +111,17 @@ struct tuntap_options {
   int txqueuelen;
 };
 
+#elif TARGET_DARWIN
+
+#define DEV_IMPL_UNDEFINED -1
+#define DEV_IMPL_TUNTAP    0
+#define DEV_IMPL_UTUN      1
+#define DEV_IMPL_SET_N     2
+
+struct tuntap_options {
+  int dev_impl;
+};
+
 #else
 
 struct tuntap_options {
@@ -296,6 +307,14 @@ ifconfig_order(void)
   return IFCONFIG_DEFAULT;
 #endif
 }
+
+
+#ifdef TARGET_DARWIN
+
+int ascii2devimpl (const char *name);
+
+#endif
+
 
 #ifdef WIN32
 

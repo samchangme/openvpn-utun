@@ -2459,20 +2459,174 @@ read_tun (struct tuntap* tt, uint8_t *buf, int len)
 
 #elif defined(TARGET_DARWIN)
 
-/* Darwin (MacOS X) is mostly "just use the generic stuff", but there
- * is always one caveat...:
- *
- * If IPv6 is configured, and the tun device is closed, the IPv6 address
- * configured to the tun interface changes to a lingering /128 route
- * pointing to lo0.  Need to unconfigure...  (observed on 10.5)
+/* As of Mac OS X 10.6 (xnu 1456.1.26), Darwin has native user tunnels. utun
+ * devices are sockets rather than character devices and are created through a
+ * special control socket. They appear to behave the same as the Free/OpenBSD
+ * tunnels, in that they prepend the IP version as a 32-bit word.
  */
+
+struct dev_impl_names {
+  const char *short_form;
+};
+
+/* Indexed by IPW32_SET_x */
+static const struct dev_impl_names dev_impl_names[] = {
+  {"tuntap"},
+  {"utun"},
+};
+
+int ascii2devimpl (const char *name)
+{
+  int i;
+
+  ASSERT (DEV_IMPL_SET_N == SIZE (dev_impl_names));
+
+  for (i = 0; i < DEV_IMPL_SET_N; ++i)
+    if (!strcmp (name, dev_impl_names[i].short_form))
+      return i;
+
+  return DEV_IMPL_UNDEFINED;
+}
+
+/* Extract the device number from the name, if given. The value returned will
+ * be suitable for sockaddr_ctl.sc_unit, which means 0 for auto-assign, or
+ * (n + 1) for manual.
+ */
+static int
+utun_unit (const char *dev)
+{
+  const char *unit_str = dev;
+  int unit = 0;
+
+  while (*unit_str != '\0' && !isdigit (*unit_str))
+    unit_str++;
+
+  if (isdigit (*unit_str))
+    unit = strtol (unit_str, NULL, 10) + 1;
+
+  return unit;
+}
+
+static void
+open_utun (const char *dev, struct tuntap *tt)
+{
+  struct sockaddr_ctl addr;
+  struct ctl_info info;
+  char ifname[10];
+  socklen_t ifname_len = sizeof (ifname);
+  int err = 0;
+
+  tt->fd = socket (PF_SYSTEM, SOCK_DGRAM, SYSPROTO_CONTROL);
+  if (tt->fd < 0)
+    {
+      msg (M_ERR | M_ERRNO, "Error creating utun socket");
+      err = -1;
+    }
+
+  /* Look up the kernel controller ID for utun devices. */
+  if (err == 0)
+    {
+      bzero (&info, sizeof (info));
+      strncpy (info.ctl_name, UTUN_CONTROL_NAME, MAX_KCTL_NAME);
+
+      err = ioctl (tt->fd, CTLIOCGINFO, &info);
+      if (err != 0)
+          msg (M_ERR | M_ERRNO, "Error getting kernel controller ID for utun devices");
+    }
+
+  /* Connecting to the socket creates the utun device. */
+  if (err == 0)
+    {
+      addr.sc_len = sizeof (addr);
+      addr.sc_family = AF_SYSTEM;
+      addr.ss_sysaddr = AF_SYS_CONTROL;
+      addr.sc_id = info.ctl_id;
+      addr.sc_unit = utun_unit(dev);
+
+      err = connect (tt->fd, (struct sockaddr *)&addr, sizeof (addr));
+      if (err != 0)
+        msg (M_ERR | M_ERRNO, "Error connecting to utun device");
+    }
+
+  /* Retrieve the assigned interface name. */
+  if (err == 0)
+    {
+      err = getsockopt (tt->fd, SYSPROTO_CONTROL, UTUN_OPT_IFNAME, ifname, &ifname_len);
+      if (err != 0)
+        msg (M_ERR | M_ERRNO, "Error retrieving utun interface name");
+    }
+
+  if (err == 0)
+    {
+      tt->actual_name = string_alloc (ifname, NULL);
+      set_nonblock (tt->fd);
+      set_cloexec (tt->fd); /* don't pass fd to scripts */
+    }
+
+  if (err != 0)
+      close_tun (tt);
+  else
+      msg (M_INFO, "TUN device %s opened", ifname);
+}
+
+static inline int
+utun_modify_read_write_return (int len)
+{
+  if (len > 0)
+    return len > sizeof (u_int32_t) ? len - sizeof (u_int32_t) : 0;
+  else
+    return len;
+}
+
+static int
+write_utun (struct tuntap* tt, uint8_t *buf, int len)
+{
+  u_int32_t type;
+  struct iovec iv[2];
+  struct ip *iph;
+
+  iph = (struct ip *) buf;
+
+  if (tt->ipv6 && iph->ip_v == 6)
+    type = htonl (AF_INET6);
+  else
+    type = htonl (AF_INET);
+
+  iv[0].iov_base = (char *)&type;
+  iv[0].iov_len = sizeof (type);
+  iv[1].iov_base = buf;
+  iv[1].iov_len = len;
+
+  return utun_modify_read_write_return (writev (tt->fd, iv, 2));
+}
+
+static int
+read_utun (struct tuntap* tt, uint8_t *buf, int len)
+{
+  u_int32_t type;
+  struct iovec iv[2];
+
+  iv[0].iov_base = (char *)&type;
+  iv[0].iov_len = sizeof (type);
+  iv[1].iov_base = buf;
+  iv[1].iov_len = len;
+
+  return utun_modify_read_write_return (readv (tt->fd, iv, 2));
+}
 
 void
 open_tun (const char *dev, const char *dev_type, const char *dev_node, struct tuntap *tt)
 {
-  open_tun_generic (dev, dev_type, dev_node, true, true, tt);
+  if (tt->options.dev_impl == DEV_IMPL_UTUN)
+    open_utun (dev, tt);
+  else
+    open_tun_generic (dev, dev_type, dev_node, false, true, tt);
 }
 
+/* If IPv6 is configured, and the tun device is closed, the IPv6 address
+ * configured to the tun interface changes to a lingering /128 route
+ * pointing to lo0.  Need to unconfigure...  (observed on 10.5)
+ */
 void
 close_tun (struct tuntap* tt)
 {
@@ -2503,13 +2657,19 @@ close_tun (struct tuntap* tt)
 int
 write_tun (struct tuntap* tt, uint8_t *buf, int len)
 {
-  return write (tt->fd, buf, len);
+  if (tt->options.dev_impl == DEV_IMPL_UTUN)
+    return write_utun (tt, buf, len);
+  else
+    return write (tt->fd, buf, len);
 }
 
 int
 read_tun (struct tuntap* tt, uint8_t *buf, int len)
 {
-  return read (tt->fd, buf, len);
+  if (tt->options.dev_impl == DEV_IMPL_UTUN)
+    return read_utun (tt, buf, len);
+  else
+    return read (tt->fd, buf, len);
 }
 
 #elif defined(WIN32)

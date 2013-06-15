@@ -726,6 +726,22 @@ or
 .B tap.
 .\"*********************************************************
 .TP
+.B \-\-dev-impl-osx tuntap | utun
+Choose a tun device implementation on Mac OS X.
+
+On Mac OS X 10.6 and later, you can use
+.B \-\-dev-impl-osx utun
+with
+.B \-\-dev-type tun
+to use the system's native user tunnel device. Prior to 10.6, it is necessary
+to install a third-party kernel extension to get the standard tun devices,
+which are selected with
+.B tuntap.
+For backwards compatibility,
+.B tuntap
+remains the default for now.
+.\"*********************************************************
+.TP
 .B \-\-topology mode
 Configure virtual addressing topology when running in
 .B \-\-dev tun

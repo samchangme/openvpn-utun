@@ -185,6 +185,10 @@ static const char usage_message[] =
   "                  does not begin with \"tun\" or \"tap\".\n"
   "--dev-node node : Explicitly set the device node rather than using\n"
   "                  /dev/net/tun, /dev/tun, /dev/tap, etc.\n"
+  "--dev-impl-osx tuntap|utun : Choose a tun implementation on OS X. tuntap\n"
+  "                  is the default and uses the tuntap character device,\n"
+  "                  available as a third-party kernel extension. utun is the\n"
+  "                  native OS X user tunnel, available since 10.6.\n"
   "--lladdr hw     : Set the link layer address of the tap device.\n"
   "--topology t    : Set --dev tun topology: 'net30', 'p2p', or 'subnet'.\n"
   "--tun-ipv6      : Build tun link capable of forwarding IPv6 traffic.\n"
@@ -4278,6 +4282,25 @@ add_option (struct options *options,
       VERIFY_PERMISSION (OPT_P_GENERAL);
       options->dev_node = p[1];
     }
+#ifdef TARGET_DARWIN
+  else if (streq (p[0], "dev-impl-osx") && p[1])
+    {
+      const int index = ascii2devimpl (p[1]);
+      struct tuntap_options *to = &options->tuntap_options;
+
+      VERIFY_PERMISSION (OPT_P_GENERAL);
+
+      if (index < 0)
+	{
+	  msg (msglevel,
+	       "Bad --dev-impl-osx method: '%s'.  Allowed methods: [tuntap utun]",
+	       p[1]);
+	  goto err;
+	}
+
+      to->dev_impl = index;
+    }
+#endif
   else if (streq (p[0], "lladdr") && p[1])
     {
       VERIFY_PERMISSION (OPT_P_UP);
