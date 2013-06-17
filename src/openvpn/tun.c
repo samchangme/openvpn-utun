@@ -2514,10 +2514,11 @@ open_utun (const char *dev, struct tuntap *tt)
   struct ctl_info info;
   char ifname[10];
   socklen_t ifname_len = sizeof (ifname);
+  int fd = -1;
   int err = 0;
 
-  tt->fd = socket (PF_SYSTEM, SOCK_DGRAM, SYSPROTO_CONTROL);
-  if (tt->fd < 0)
+  fd = socket (PF_SYSTEM, SOCK_DGRAM, SYSPROTO_CONTROL);
+  if (fd < 0)
     {
       msg (M_ERR | M_ERRNO, "Error creating utun socket");
       err = -1;
@@ -2529,7 +2530,7 @@ open_utun (const char *dev, struct tuntap *tt)
       bzero (&info, sizeof (info));
       strncpy (info.ctl_name, UTUN_CONTROL_NAME, MAX_KCTL_NAME);
 
-      err = ioctl (tt->fd, CTLIOCGINFO, &info);
+      err = ioctl (fd, CTLIOCGINFO, &info);
       if (err != 0)
           msg (M_ERR | M_ERRNO, "Error getting kernel controller ID for utun devices");
     }
@@ -2543,7 +2544,7 @@ open_utun (const char *dev, struct tuntap *tt)
       addr.sc_id = info.ctl_id;
       addr.sc_unit = utun_unit(dev);
 
-      err = connect (tt->fd, (struct sockaddr *)&addr, sizeof (addr));
+      err = connect (fd, (struct sockaddr *)&addr, sizeof (addr));
       if (err != 0)
         msg (M_ERR | M_ERRNO, "Error connecting to utun device");
     }
@@ -2551,22 +2552,26 @@ open_utun (const char *dev, struct tuntap *tt)
   /* Retrieve the assigned interface name. */
   if (err == 0)
     {
-      err = getsockopt (tt->fd, SYSPROTO_CONTROL, UTUN_OPT_IFNAME, ifname, &ifname_len);
+      err = getsockopt (fd, SYSPROTO_CONTROL, UTUN_OPT_IFNAME, ifname, &ifname_len);
       if (err != 0)
         msg (M_ERR | M_ERRNO, "Error retrieving utun interface name");
     }
 
   if (err == 0)
     {
-      tt->actual_name = string_alloc (ifname, NULL);
-      set_nonblock (tt->fd);
-      set_cloexec (tt->fd); /* don't pass fd to scripts */
-    }
+      set_nonblock (fd);
+      set_cloexec (fd); /* don't pass fd to scripts */
 
-  if (err != 0)
-      close_tun (tt);
-  else
+      tt->fd = fd;
+      tt->actual_name = string_alloc (ifname, NULL);
+
       msg (M_INFO, "TUN device %s opened", ifname);
+    }
+  else
+    {
+      if (fd >= 0)
+        close(fd);
+    }
 }
 
 static inline int
