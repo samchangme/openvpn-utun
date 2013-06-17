@@ -2465,29 +2465,6 @@ read_tun (struct tuntap* tt, uint8_t *buf, int len)
  * tunnels, in that they prepend the IP version as a 32-bit word.
  */
 
-struct dev_impl_names {
-  const char *short_form;
-};
-
-/* Indexed by IPW32_SET_x */
-static const struct dev_impl_names dev_impl_names[] = {
-  {"tuntap"},
-  {"utun"},
-};
-
-int ascii2devimpl (const char *name)
-{
-  int i;
-
-  ASSERT (DEV_IMPL_SET_N == SIZE (dev_impl_names));
-
-  for (i = 0; i < DEV_IMPL_SET_N; ++i)
-    if (!strcmp (name, dev_impl_names[i].short_form))
-      return i;
-
-  return DEV_IMPL_UNDEFINED;
-}
-
 /* Extract the device number from the name, if given. The value returned will
  * be suitable for sockaddr_ctl.sc_unit, which means 0 for auto-assign, or
  * (n + 1) for manual.
@@ -2507,8 +2484,8 @@ utun_unit (const char *dev)
   return unit;
 }
 
-static void
-open_utun (const char *dev, struct tuntap *tt)
+void
+open_tun (const char *dev, const char *dev_type, const char *dev_node, struct tuntap *tt)
 {
   struct sockaddr_ctl addr;
   struct ctl_info info;
@@ -2583,8 +2560,8 @@ utun_modify_read_write_return (int len)
     return len;
 }
 
-static int
-write_utun (struct tuntap* tt, uint8_t *buf, int len)
+int
+write_tun (struct tuntap* tt, uint8_t *buf, int len)
 {
   u_int32_t type;
   struct iovec iv[2];
@@ -2605,8 +2582,8 @@ write_utun (struct tuntap* tt, uint8_t *buf, int len)
   return utun_modify_read_write_return (writev (tt->fd, iv, 2));
 }
 
-static int
-read_utun (struct tuntap* tt, uint8_t *buf, int len)
+int
+read_tun (struct tuntap* tt, uint8_t *buf, int len)
 {
   u_int32_t type;
   struct iovec iv[2];
@@ -2617,15 +2594,6 @@ read_utun (struct tuntap* tt, uint8_t *buf, int len)
   iv[1].iov_len = len;
 
   return utun_modify_read_write_return (readv (tt->fd, iv, 2));
-}
-
-void
-open_tun (const char *dev, const char *dev_type, const char *dev_node, struct tuntap *tt)
-{
-  if (tt->options.dev_impl == DEV_IMPL_UTUN)
-    open_utun (dev, tt);
-  else
-    open_tun_generic (dev, dev_type, dev_node, false, true, tt);
 }
 
 /* If IPv6 is configured, and the tun device is closed, the IPv6 address
@@ -2657,24 +2625,6 @@ close_tun (struct tuntap* tt)
       argv_reset (&argv);
       gc_free (&gc);
     }
-}
-
-int
-write_tun (struct tuntap* tt, uint8_t *buf, int len)
-{
-  if (tt->options.dev_impl == DEV_IMPL_UTUN)
-    return write_utun (tt, buf, len);
-  else
-    return write (tt->fd, buf, len);
-}
-
-int
-read_tun (struct tuntap* tt, uint8_t *buf, int len)
-{
-  if (tt->options.dev_impl == DEV_IMPL_UTUN)
-    return read_utun (tt, buf, len);
-  else
-    return read (tt->fd, buf, len);
 }
 
 #elif defined(WIN32)
